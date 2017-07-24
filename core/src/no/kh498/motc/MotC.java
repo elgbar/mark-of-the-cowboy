@@ -14,6 +14,7 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
 
 import java.io.File;
+import java.util.Random;
 
 public class MotC extends ApplicationAdapter {
 
@@ -30,16 +31,22 @@ public class MotC extends ApplicationAdapter {
     private static final String LEVEL_1 = "maps" + File.separatorChar + "level1.tmx";
     private static MotC INSTANCE;
 
-    Vector3 backgroundColors = new Vector3() {{
-        add(60, 181, 181); //green
-        add(252, 217, 32); //yellow
-        add(229, 59, 81);  //red
-        add(236, 108, 32); //orange
-    }};
+    private final Vector3[] backgroundColors = new Vector3[4];
+
+    private int bkClr;
 
     @Override
     public void create() {
         INSTANCE = this;
+
+        final float div = 255f;
+        this.backgroundColors[0] = new Vector3(60 / div, 181 / div, 181 / div); //green
+        this.backgroundColors[1] = new Vector3(252 / div, 217 / div, 32 / div); //yellow
+        this.backgroundColors[2] = new Vector3(229 / div, 59 / div, 81 / div);  //red
+        this.backgroundColors[3] = new Vector3(236 / div, 108 / div, 32 / div); //orange
+
+        this.bkClr = new Random().nextInt(this.backgroundColors.length);
+
         this.batch = new SpriteBatch();
 
 //        this.assetManager = new AssetManager();
@@ -61,7 +68,8 @@ public class MotC extends ApplicationAdapter {
 
     @Override
     public void render() {
-        Gdx.gl.glClearColor(1, 0, 0, 1);
+        Gdx.gl.glClearColor(this.backgroundColors[this.bkClr].x, this.backgroundColors[this.bkClr].y,
+                            this.backgroundColors[this.bkClr].z, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         basicMove(this.camera, Gdx.graphics.getDeltaTime());
