@@ -2,42 +2,52 @@ package no.kh498.motc;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.maps.MapLayer;
+import com.badlogic.gdx.maps.MapObjects;
+import com.badlogic.gdx.maps.objects.TextureMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TmxMapLoader;
-import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
-import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
+import no.kh498.motc.objects.InteractiveDevice;
+import no.kh498.motc.objects.Type;
+import no.kh498.motc.objects.network.Network;
+import no.kh498.motc.render.TextureMapObjectRenderer;
+import no.kh498.motc.terminal.InputListener;
+import no.kh498.motc.terminal.Terminal;
 
 import java.io.File;
 import java.util.Random;
 
 public class MotC extends ApplicationAdapter {
 
-    public final static int TILE_RESOLUTION = 32;
+    private static final String LEVEL_1 = "maps" + File.separatorChar + "level1.tmx";
+    private static MotC INSTANCE;
+    public static final float TILE_RESOLUTION = 32f;
 
     private SpriteBatch batch;
     private BitmapFont font;
     //    private AssetManager assetManager;
     private TiledMap tiledMap;
-    private final float unitScale = 1 / 16f;
-    private OrthogonalTiledMapRenderer mapRenderer;
-    private OrthographicCamera camera;
-
-    private static final String LEVEL_1 = "maps" + File.separatorChar + "level1.tmx";
-    private static MotC INSTANCE;
+    private TextureMapObjectRenderer mapRenderer;
+    private OrthographicCamera worldCamera;
 
     private final Vector3[] backgroundColors = new Vector3[4];
 
     private int bkClr;
+    private Player player;
+    private Terminal terminal;
+
+    private Network network;
 
     @Override
     public void create() {
         INSTANCE = this;
+
+        Gdx.input.setInputProcessor(new InputListener());
 
         final float div = 255f;
         this.backgroundColors[0] = new Vector3(60 / div, 181 / div, 181 / div); //green
@@ -45,6 +55,7 @@ public class MotC extends ApplicationAdapter {
         this.backgroundColors[2] = new Vector3(229 / div, 59 / div, 81 / div);  //red
         this.backgroundColors[3] = new Vector3(236 / div, 108 / div, 32 / div); //orange
 
+        //select a random background color
         this.bkClr = new Random().nextInt(this.backgroundColors.length);
 
         this.batch = new SpriteBatch();
@@ -57,13 +68,20 @@ public class MotC extends ApplicationAdapter {
 
         this.tiledMap = new TmxMapLoader().load(LEVEL_1);
 
-        this.camera = new OrthographicCamera();
-        this.camera.setToOrtho(false, 20, 10);
+        this.worldCamera = new OrthographicCamera();
+        this.worldCamera.setToOrtho(false, 20, 10);
 
-        this.mapRenderer = new OrthogonalTiledMapRenderer(this.tiledMap, this.unitScale);
-        this.mapRenderer.setView(this.camera);
+        final float unitScale = 1 / TILE_RESOLUTION;
+        this.mapRenderer = new TextureMapObjectRenderer(this.tiledMap, unitScale);
+        this.mapRenderer.setView(this.worldCamera);
 
         this.font = new BitmapFont();
+
+        this.player = new Player(0, 4);
+
+        this.terminal = new Terminal();
+
+        setupObjects();
     }
 
     @Override
@@ -72,52 +90,95 @@ public class MotC extends ApplicationAdapter {
                             this.backgroundColors[this.bkClr].z, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        basicMove(this.camera, Gdx.graphics.getDeltaTime());
-        wireVisibility();
+        this.worldCamera.position.set(this.player.x, this.worldCamera.position.y, 0);
 
-        this.mapRenderer.setView(this.camera);
-        this.mapRenderer.render();
 
         /* Drawing */
+        this.mapRenderer.setView(this.worldCamera);
+        this.mapRenderer.render();
+
         this.batch.begin();
-        this.font.draw(this.batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 0, 30);
+        this.player.update(this.batch, Gdx.graphics.getDeltaTime());
+        this.font.draw(this.batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), 0, this.font.getLineHeight());
+        this.terminal.render(this.batch);
         this.batch.end();
 
-        this.camera.update();
+        this.worldCamera.update();
     }
 
     @Override
     public void dispose() {
         this.batch.dispose();
         this.font.dispose();
+        this.mapRenderer.dispose();
+        this.tiledMap.dispose();
+        this.terminal.dispose();
     }
 
-    private void wireVisibility() {
-        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) {
-            final boolean visible = this.tiledMap.getLayers().get("Wire").isVisible();
-            this.tiledMap.getLayers().get("Wire").setVisible(!visible);
-        }
+    @Override
+    public void resize(final int width, final int height) {
+        this.terminal.resize(width, height);
     }
 
-    private void basicMove(final OrthographicCamera camera, final float delta) {
-        final Vector2 newCamPos = new Vector2();
 
-        if (Gdx.input.isKeyPressed(Input.Keys.A)) {
-            newCamPos.x -= 1;
+    private void setupObjects() {
+        final MapLayer layer = this.tiledMap.getLayers().get("Objects");
+        final MapObjects objects = layer.getObjects();
+        final InteractiveDevice[] interactiveDevices = new InteractiveDevice[objects.getCount()];
+
+        int i = 0;
+        for (final Object object : objects) {
+            interactiveDevices[i] = Type.getNewInstance((TextureMapObject) object);
+            i++;
         }
-        if (Gdx.input.isKeyPressed(Input.Keys.D)) {
-            newCamPos.x += 1;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.W)) {
-            newCamPos.y += 1;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.S)) {
-            newCamPos.y -= 1;
-        }
-        camera.position.add(newCamPos.x * delta * 3, newCamPos.y * delta * 3, 0);
+
+        this.network = new Network(interactiveDevices);
+        System.out.println("network = " + this.network);
     }
+
+//    private void wireVisibility() {
+//        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) {
+//            final boolean visible = this.tiledMap.getLayers().get("Wire").isVisible();
+//            this.tiledMap.getLayers().get("Wire").setVisible(!visible);
+//        }
+//    }
+//
+//    private void basicMove(final OrthographicCamera camera, final float delta) {
+//        final Vector2 newCamPos = new Vector2();
+//
+//        if (Gdx.input.isKeyPressed(Input.Keys.A)) {
+//            newCamPos.x -= 1;
+//        }
+//        if (Gdx.input.isKeyPressed(Input.Keys.D)) {
+//            newCamPos.x += 1;
+//        }
+//        if (Gdx.input.isKeyPressed(Input.Keys.W)) {
+//            newCamPos.y += 1;
+//        }
+//        if (Gdx.input.isKeyPressed(Input.Keys.S)) {
+//            newCamPos.y -= 1;
+//        }
+//        camera.position.add(newCamPos.x * delta * 3, newCamPos.y * delta * 3, 0);
+//    }
+
 
     public static MotC getInstance() {
         return INSTANCE;
+    }
+
+    public Terminal getTerminal() {
+        return this.terminal;
+    }
+
+    public TiledMap getTiledMap() {
+        return this.tiledMap;
+    }
+
+    public Network getNetwork() {
+        return this.network;
+    }
+
+    public Player getPlayer() {
+        return this.player;
     }
 }
